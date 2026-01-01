@@ -26,6 +26,17 @@ const (
 	// Default alignment period for PubSub metrics (3 minutes)
 	// PubSub metrics are collected every 60 seconds
 	DefaultPubSubAlignmentPeriod = int64(180)
+
+	// Aggregation function names
+	AggregationDelta        = "delta"
+	AggregationMean         = "mean"
+	AggregationCount        = "count"
+	AggregationSum          = "sum"
+	AggregationStddev       = "stddev"
+	AggregationPercentile99 = "percentile_99"
+	AggregationPercentile95 = "percentile_95"
+	AggregationPercentile50 = "percentile_50"
+	AggregationPercentile05 = "percentile_05"
 )
 
 // StackDriverClient is a generic client to fetch metrics from Stackdriver. Can be used
@@ -108,7 +119,7 @@ func alignerFromString(aligner string) (monitoringpb.Aggregation_Aligner, error)
 	switch strings.ToLower(aligner) {
 	case "", "none":
 		return monitoringpb.Aggregation_ALIGN_NONE, nil
-	case "delta":
+	case AggregationDelta:
 		return monitoringpb.Aggregation_ALIGN_DELTA, nil
 	case "rate":
 		return monitoringpb.Aggregation_ALIGN_RATE, nil
@@ -120,13 +131,13 @@ func alignerFromString(aligner string) (monitoringpb.Aggregation_Aligner, error)
 		return monitoringpb.Aggregation_ALIGN_MIN, nil
 	case "max":
 		return monitoringpb.Aggregation_ALIGN_MAX, nil
-	case "mean":
+	case AggregationMean:
 		return monitoringpb.Aggregation_ALIGN_MEAN, nil
-	case "count":
+	case AggregationCount:
 		return monitoringpb.Aggregation_ALIGN_COUNT, nil
-	case "sum":
+	case AggregationSum:
 		return monitoringpb.Aggregation_ALIGN_SUM, nil
-	case "stddev":
+	case AggregationStddev:
 		return monitoringpb.Aggregation_ALIGN_STDDEV, nil
 	case "count_true":
 		return monitoringpb.Aggregation_ALIGN_COUNT_TRUE, nil
@@ -134,36 +145,36 @@ func alignerFromString(aligner string) (monitoringpb.Aggregation_Aligner, error)
 		return monitoringpb.Aggregation_ALIGN_COUNT_FALSE, nil
 	case "fraction_true":
 		return monitoringpb.Aggregation_ALIGN_FRACTION_TRUE, nil
-	case "percentile_99":
+	case AggregationPercentile99:
 		return monitoringpb.Aggregation_ALIGN_PERCENTILE_99, nil
-	case "percentile_95":
+	case AggregationPercentile95:
 		return monitoringpb.Aggregation_ALIGN_PERCENTILE_95, nil
-	case "percentile_50":
+	case AggregationPercentile50:
 		return monitoringpb.Aggregation_ALIGN_PERCENTILE_50, nil
-	case "percentile_05":
+	case AggregationPercentile05:
 		return monitoringpb.Aggregation_ALIGN_PERCENTILE_05, nil
 	case "percent_change":
 		return monitoringpb.Aggregation_ALIGN_PERCENT_CHANGE, nil
 	default:
+		return monitoringpb.Aggregation_ALIGN_NONE, fmt.Errorf("unknown aligner: %s", aligner)
 	}
-	return monitoringpb.Aggregation_ALIGN_NONE, fmt.Errorf("unknown aligner: %s", aligner)
 }
 
 func reducerFromString(reducer string) (monitoringpb.Aggregation_Reducer, error) {
 	switch strings.ToLower(reducer) {
 	case "", "none":
 		return monitoringpb.Aggregation_REDUCE_NONE, nil
-	case "mean":
+	case AggregationMean:
 		return monitoringpb.Aggregation_REDUCE_MEAN, nil
 	case "min":
 		return monitoringpb.Aggregation_REDUCE_MIN, nil
 	case "max":
 		return monitoringpb.Aggregation_REDUCE_MAX, nil
-	case "sum":
+	case AggregationSum:
 		return monitoringpb.Aggregation_REDUCE_SUM, nil
-	case "stddev":
+	case AggregationStddev:
 		return monitoringpb.Aggregation_REDUCE_STDDEV, nil
-	case "count":
+	case AggregationCount:
 		return monitoringpb.Aggregation_REDUCE_COUNT, nil
 	case "count_true":
 		return monitoringpb.Aggregation_REDUCE_COUNT_TRUE, nil
@@ -171,17 +182,17 @@ func reducerFromString(reducer string) (monitoringpb.Aggregation_Reducer, error)
 		return monitoringpb.Aggregation_REDUCE_COUNT_FALSE, nil
 	case "fraction_true":
 		return monitoringpb.Aggregation_REDUCE_FRACTION_TRUE, nil
-	case "percentile_99":
+	case AggregationPercentile99:
 		return monitoringpb.Aggregation_REDUCE_PERCENTILE_99, nil
-	case "percentile_95":
+	case AggregationPercentile95:
 		return monitoringpb.Aggregation_REDUCE_PERCENTILE_95, nil
-	case "percentile_50":
+	case AggregationPercentile50:
 		return monitoringpb.Aggregation_REDUCE_PERCENTILE_50, nil
-	case "percentile_05":
+	case AggregationPercentile05:
 		return monitoringpb.Aggregation_REDUCE_PERCENTILE_05, nil
 	default:
+		return monitoringpb.Aggregation_REDUCE_NONE, fmt.Errorf("unknown reducer: %s", reducer)
 	}
-	return monitoringpb.Aggregation_REDUCE_NONE, fmt.Errorf("unknown reducer: %s", reducer)
 }
 
 // GetMetrics fetches metrics from stackdriver for a specific filter for the last minute
@@ -265,9 +276,10 @@ func (s StackDriverClient) GetPubSubMetrics(
 	filter := fmt.Sprintf(`metric.type="%s"`, metricType)
 
 	// Add resource label filter based on resource type
-	if resourceType == ResourceTypePubSubSubscription {
+	switch resourceType {
+	case ResourceTypePubSubSubscription:
 		filter += fmt.Sprintf(` AND resource.labels.subscription_id="%s"`, resourceName)
-	} else if resourceType == ResourceTypePubSubTopic {
+	case ResourceTypePubSubTopic:
 		filter += fmt.Sprintf(` AND resource.labels.topic_id="%s"`, resourceName)
 	}
 
@@ -302,41 +314,41 @@ func NewPubSubAggregator(aggregation string) (*monitoringpb.Aggregation, error) 
 	var reducer string
 
 	switch {
-	case agg == "count":
-		aligner = "delta"
-		reducer = "sum"
-	case agg == "sum":
-		aligner = "delta"
-		reducer = "sum"
-	case agg == "mean":
-		aligner = "mean"
-		reducer = "mean"
+	case agg == AggregationCount:
+		aligner = AggregationDelta
+		reducer = AggregationSum
+	case agg == AggregationSum:
+		aligner = AggregationDelta
+		reducer = AggregationSum
+	case agg == AggregationMean:
+		aligner = AggregationMean
+		reducer = AggregationMean
 	case agg == "median":
-		aligner = "percentile_50"
-		reducer = "percentile_50"
-	case agg == "stddev":
-		aligner = "stddev"
-		reducer = "stddev"
+		aligner = AggregationPercentile50
+		reducer = AggregationPercentile50
+	case agg == AggregationStddev:
+		aligner = AggregationStddev
+		reducer = AggregationStddev
 	case agg == "variance":
 		// Variance is not directly supported, use stddev as an approximation
-		aligner = "stddev"
-		reducer = "stddev"
+		aligner = AggregationStddev
+		reducer = AggregationStddev
 	case strings.HasPrefix(agg, "percentile"):
 		// Handle percentileXX format (e.g., percentile99, percentile95)
 		suffix := strings.TrimPrefix(agg, "percentile")
 		switch suffix {
 		case "99":
-			aligner = "percentile_99"
-			reducer = "percentile_99"
+			aligner = AggregationPercentile99
+			reducer = AggregationPercentile99
 		case "95":
-			aligner = "percentile_95"
-			reducer = "percentile_95"
+			aligner = AggregationPercentile95
+			reducer = AggregationPercentile95
 		case "50":
-			aligner = "percentile_50"
-			reducer = "percentile_50"
+			aligner = AggregationPercentile50
+			reducer = AggregationPercentile50
 		case "05", "5":
-			aligner = "percentile_05"
-			reducer = "percentile_05"
+			aligner = AggregationPercentile05
+			reducer = AggregationPercentile05
 		default:
 			return nil, fmt.Errorf("unsupported percentile: %s (only 99, 95, 50, 05 are supported)", suffix)
 		}
